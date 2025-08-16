@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Private Chat</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+        #app {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        #nickname-container {
+            padding: 20px;
+            background: #4a76a8;
+            color: white;
+            display: flex;
+            gap: 10px;
+        }
+        #nickname-input {
+            flex-grow: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #2c3e50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #1a252f;
+        }
+        button:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+        }
+        #chat-container {
+            display: none;
+            height: 500px;
+        }
+        #chat-layout {
+            display: flex;
+            height: 100%;
+        }
+        #users-panel {
+            width: 250px;
+            border-right: 1px solid #eee;
+            overflow-y: auto;
+        }
+        #users-panel h3 {
+            padding: 15px;
+            background: #f9f9f9;
+            border-bottom: 1px solid #eee;
+        }
+        #user-list {
+            list-style: none;
+        }
+        #user-list li {
+            padding: 12px 15px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+            transition: background 0.2s;
+        }
+        #user-list li:hover {
+            background: #f0f0f0;
+        }
+        #chat-area {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        #chat-header {
+            padding: 15px;
+            background: #f9f9f9;
+            border-bottom: 1px solid #eee;
+            font-weight: bold;
+        }
+        #messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 15px;
+        }
+        .message {
+            margin-bottom: 15px;
+            max-width: 70%;
+            padding: 10px 15px;
+            border-radius: 18px;
+            line-height: 1.4;
+            position: relative;
+        }
+        .message-sent {
+            background: #4a76a8;
+            color: white;
+            margin-left: auto;
+            border-bottom-right-radius: 2px;
+        }
+        .message-received {
+            background: #f0f0f0;
+            margin-right: auto;
+            border-bottom-left-radius: 2px;
+        }
+        .message-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8em;
+            margin-bottom: 5px;
+        }
+        .message-sent .message-info {
+            color: #e0e0e0;
+        }
+        .message-received .message-info {
+            color: #777;
+        }
+        #message-form {
+            display: flex;
+            padding: 15px;
+            border-top: 1px solid #eee;
+            background: #f9f9f9;
+        }
+        #message-input {
+            flex-grow: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            outline: none;
+        }
+        #send-button {
+            margin-left: 10px;
+            border-radius: 20px;
+            background: #4a76a8;
+        }
+        .typing-indicator {
+            color: #777;
+            font-style: italic;
+            padding: 5px 15px;
+            font-size: 0.9em;
+        }
+        .status-message {
+            text-align: center;
+            color: #777;
+            padding: 10px;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div id="nickname-container">
+            <input id="nickname-input" placeholder="Enter your nickname" />
+            <button id="set-nickname">Join Chat</button>
+        </div>
+        
+        <div id="chat-container">
+            <div id="chat-layout">
+                <div id="users-panel">
+                    <h3>Online Users</h3>
+                    <ul id="user-list"></ul>
+                </div>
+                
+                <div id="chat-area">
+                    <div id="chat-header">
+                        <span id="current-chat-partner">Select a user to chat with</span>
+                    </div>
+                    
+                    <div id="messages">
+                        <div class="status-message">Select a user to start chatting</div>
+                    </div>
+                    
+                    <form id="message-form">
+                        <input id="message-input" placeholder="Type a message..." disabled />
+                        <button id="send-button" type="submit" disabled>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                            </svg>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let currentRecipient = null;
+        
+        // DOM elements
+        const nicknameContainer = document.getElementById('nickname-container');
+        const nicknameInput = document.getElementById('nickname-input');
+        const setNicknameBtn = document.getElementById('set-nickname');
+        const chatContainer = document.getElementById('chat-container');
+        const userList = document.getElementById('user-list');
+        const chatHeader = document.getElementById('chat-header');
+        const currentChatPartner = document.getElementById('current-chat-partner');
+        const messagesContainer = document.getElementById('messages');
+        const messageForm = document.getElementById('message-form');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        
+        // Set nickname
+        setNicknameBtn.addEventListener('click', setNickname);
+        nicknameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') setNickname();
+        });
+        
+        function setNickname() {
+            const nickname = nicknameInput.value.trim();
+            if (nickname) {
+                socket.emit('set nickname', nickname);
+            }
+        }
+        
+        // Handle nickname acceptance
+        socket.on('nickname accepted', () => {
+            nicknameContainer.style.display = 'none';
+            chatContainer.style.display = 'block';
+        });
+        
+        // Handle nickname error
+        socket.on('nickname error', (error) => {
+            alert(error);
+        });
+        
+        // Update user list
+        socket.on('user list', (users) => {
+            userList.innerHTML = '';
+            
+            if (users.length === 1) {
+                userList.innerHTML = '<li class="status-message">No other users online</li>';
+                return;
+            }
+            
+            users.forEach(user => {
+                if (user !== socket.nickname) {
+                    const li = document.createElement('li');
+                    li.textContent = user;
+                    li.addEventListener('click', () => {
+                        selectUser(user);
+                    });
+                    userList.appendChild(li);
+                }
+            });
+        });
+        
+        // Select a user to chat with
+        function selectUser(user) {
+            currentRecipient = user;
+            currentChatPartner.textContent = `Chatting with ${user}`;
+            messageInput.disabled = false;
+            sendButton.disabled = false;
+            messageInput.focus();
+            
+            // Clear previous messages and show a new conversation indicator
+            messagesContainer.innerHTML = `
+                <div class="status-message">Conversation with ${user}</div>
+            `;
+        }
+        
+        // Handle message submission
+        messageForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            sendMessage();
+        });
+        
+        sendButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            sendMessage();
+        });
+        
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (message && currentRecipient) {
+                socket.emit('private message', {
+                    to: currentRecipient,
+                    message
+                });
+                messageInput.value = '';
+            }
+        }
+        
+        // Allow sending message with Enter key (but Shift+Enter for new line)
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        
+        // Display private messages
+        socket.on('private message', (data) => {
+            // Remove status message if it exists
+            const statusMessage = messagesContainer.querySelector('.status-message');
+            if (statusMessage && statusMessage.textContent.includes('Select a user')) {
+                messagesContainer.innerHTML = '';
+            }
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${data.isCurrentUser ? 'message-sent' : 'message-received'}`;
+            
+            const messageInfo = document.createElement('div');
+            messageInfo.className = 'message-info';
+            messageInfo.innerHTML = `
+                <span>${data.isCurrentUser ? 'You' : data.from}</span>
+                <span>${data.timestamp}</span>
+            `;
+            
+            const messageText = document.createElement('div');
+            messageText.textContent = data.message;
+            
+            messageDiv.appendChild(messageInfo);
+            messageDiv.appendChild(messageText);
+            messagesContainer.appendChild(messageDiv);
+            
+            // Scroll to bottom
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        });
+    </script>
+</body>
+</html>
